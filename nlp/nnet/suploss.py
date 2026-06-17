@@ -102,7 +102,7 @@ class SuplossLSTM(nn.Module):
     def daluan(self, x):
 
         batch_size, seq_len, vec_size = x.shape
-        num_to_shuffle = 20
+        num_to_shuffle = 5
 
         # 转置: [batch_size, vec_size, seq_len]
         x_t = x.permute(0, 2, 1)
