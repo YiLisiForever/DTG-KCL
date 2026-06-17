@@ -31,10 +31,6 @@ class SuplossLSTM(nn.Module):
         return cnn_features  # [batch, hidden]
 
     def __init__(self, config, usegpu):
-        torch.manual_seed(42)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(42)
-            torch.cuda.manual_seed_all(42)
         super(SuplossLSTM, self).__init__()
         self.usegpu = usegpu
         features = config.getint("net", "hidden_size")
@@ -53,7 +49,6 @@ class SuplossLSTM(nn.Module):
 
         # 添加输入归一化层
         self.input_norm = nn.LayerNorm(self.vec_size)
-        self.pinjie_norm = nn.LayerNorm(self.vec_size)
         self.outfc = []  # 为每个任务创建一个输出全连接层（nn.Linear）
 
         for x in task_name:
@@ -99,30 +94,7 @@ class SuplossLSTM(nn.Module):
         self.lstm_list = nn.ModuleList(self.lstm_list)
         self.midfc = nn.ModuleList(self.midfc)
 
-    def daluan(self, x):
 
-        batch_size, seq_len, vec_size = x.shape
-        num_to_shuffle = 5
-
-        # 转置: [batch_size, vec_size, seq_len]
-        x_t = x.permute(0, 2, 1)
-
-        # 随机选择20个位置
-        selected_positions = torch.randperm(seq_len, device=x.device)[:num_to_shuffle]
-
-        # 提取这20个位置的词（在序列维度上）
-        subset = x_t[:, :, selected_positions]  # [batch_size, vec_size, 20]
-
-        # 打乱这20个位置
-        shuffled_order = torch.randperm(num_to_shuffle, device=x.device)
-        shuffled_subset = subset[:, :, shuffled_order]
-
-        # 放回原位置
-        x_t_shuffled = x_t.clone()
-        x_t_shuffled[:, :, selected_positions] = shuffled_subset
-
-        # 转置回原形状
-        return x_t_shuffled.permute(0, 2, 1)
     def init_hidden(self, config, usegpu):
         self.hidden_list = []#(hn)
         task_name = config.get("data", "type_of_label").replace(" ", "").split(",")
@@ -130,12 +102,11 @@ class SuplossLSTM(nn.Module):
             if torch.cuda.is_available() and usegpu:
                 self.hidden_list.append(
                     torch.autograd.Variable(
-                        torch.zeros(2 * config.getint("data", "batch_size"), self.hidden_dim).cuda()),
+                        torch.zeros(config.getint("data", "batch_size"), self.hidden_dim).cuda()),
                     )
             else:
                 self.hidden_list.append(
-                    torch.autograd.Variable(torch.zeros(2 * config.getint("data", "batch_size"), self.hidden_dim)))
-
+                    torch.autograd.Variable(torch.zeros(config.getint("data", "batch_size"), self.hidden_dim)))
     def forward(self, x, config, keywords_rep, key_gold, crit_label, crit_mask):
         # x.shape: (batch_size, seq_len, vec_size)
         # siminfo = get_case_graph(config, x)
@@ -147,7 +118,6 @@ class SuplossLSTM(nn.Module):
         outputs = []
         current_input = x
         current_input = self.input_norm(current_input)
-        shuffled_x = self.daluan(current_input)
         task_name = config.get("data", "type_of_label").replace(" ", "").split(",")
         # law--crit--time的全连接图
         """"""
@@ -164,8 +134,7 @@ class SuplossLSTM(nn.Module):
         word_weight = self.soft(logit_x)  # (batch_size, allword_len)
         word_rep = word_weight @ keywords_rep  # (batch_size, allword_len) * (allword_num,hidden)=(batch_size, hidden)
 # ----------------------软选择词汇表示结束-------------------------*
-        current_input = torch.cat([current_input, shuffled_x], dim=0)  # [2*batch, seq_len, vec_size]
-        current_input = self.pinjie_norm(current_input)
+
         for a in range(1, len(task_name)+1):  # 遍历每个任务（跳过占位符0）
             output, (hn, cn) = self.lstm_list[a](current_input)
 
@@ -175,37 +144,23 @@ class SuplossLSTM(nn.Module):
             """"""
             hn = self.attention(forback_h, output) #(batch, hidden * 2)
             self.hidden_list[a] = hn
+
 # -------------------二层动态任务卷积-------------------*
         new_hn, _ = self.conv_1(self.hidden_list)
         new_hn_2, conv_weight = self.conv_2(new_hn)
 # ----------------------卷积结束------------------------*
-# ----------------------将两个batch拆出来处理------------------------*
-        batch_size = x.size(0)
-        shuffle_new_hn_2 = [None]
-        original_new_hn_2 = [None]
-        for a in range(1, len(task_name)+1):
-            shuffle_new_hn_2.append(new_hn_2[a][batch_size:])
-            original_new_hn_2.append(new_hn_2[a][:batch_size])
-
-# ----------------------拆出来处理------------------------*
 # ----------------------对比学习------------------------*
         new_list = []
         for a in range(1, len(task_name) + 1):
-            if self.task_name[a - 1] == "crit":
-                hn = original_new_hn_2[a]
-                shuff_hn = shuffle_new_hn_2[a]
-                new_list.append(hn)
-                new_list.append(shuff_hn)
-            """
+            hn = new_hn_2[a]
             if self.task_name[a-1] == "crit":
                 new_list.append(hn)
                 new_list.append(hn)
-            """
         contrast_loss = self.suploss(torch.stack(new_list, dim=1), None, crit_mask)
 # ----------------------词汇表示融合-------------------------*
         """"""
         for a in range(1, len(task_name) + 1):
-            hn = original_new_hn_2[a]
+            hn = new_hn_2[a]
             if self.task_name[a-1] == "crit":
                 mat_for_tsne = hn
                 hn = self.ronghe_full(torch.cat([hn, word_rep], dim=1))
