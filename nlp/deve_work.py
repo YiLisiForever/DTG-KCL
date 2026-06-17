@@ -20,7 +20,7 @@ from torch.nn.utils import clip_grad_norm_
 from sklearn.manifold import TSNE
 import numpy as np
 import matplotlib.pyplot as plt
-# import seaborn as sns
+import seaborn as sns
 def test_file(net, test_dataset, usegpu, config, epoch):
     batch_count = 0
     net.eval()
@@ -224,21 +224,12 @@ def train_file(net, train_dataset, test_dataset, usegpu, config):
                 loss = loss + task_loss
                 running_acc[a] = calc_accuracy(outputs[a], labels[a], task_loss_type[a], running_acc[a])
             all_loss.append(task_losses)
-
-            if torch.isnan(loss) or torch.isnan(contrast_loss):
-                print(f"⚠️ NaN detected at batch")
-                print("loss",loss)
-                print("contra loss",contrast_loss)
-                optimizer.zero_grad()
-                continue  # 跳过这个batch
-
             # print_info("Loss done, backwarding...")
             if isinstance(net, ExtralossLSTM) or isinstance(net, AttGcnLSTM) or isinstance(net, LSTMDecoder):
                 loss = loss + word_loss
             if isinstance(net, SuplossLSTM):
                 loss = loss + word_loss
-                loss = loss + 0.5 * contrast_loss
-
+                loss = loss + 0.05 * contrast_loss
             loss.backward()
 
 
@@ -263,7 +254,7 @@ def train_file(net, train_dataset, test_dataset, usegpu, config):
             for a, task_loss in enumerate(task_losses):
                 print(f"Task {task_name[a]} loss: {task_loss:.4f}")
             print(f"Word_select loss: {word_loss:.4f}")
-            print(f"contrast loss: {0.5 * contrast_loss:.4f}")
+            print(f"contrast loss: {0.05 * contrast_loss:.4f}")
 
             # 每output_time个batch输出一次
 
@@ -396,7 +387,7 @@ def draw_tsne(config, x, y, batch_mask, num):
     plt.savefig(file_path, dpi=600, bbox_inches='tight', format="png")
     # 显示图形
     plt.close()
-    """
+
 def draw_kernel(config, con_weight):
     con_weight = [x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x for x in con_weight]
     result_1 = [con_weight[i] for i in range(0, len(con_weight), 6)]
@@ -451,5 +442,3 @@ def draw_kernel(config, con_weight):
     plt.savefig(file_path, dpi=800, bbox_inches='tight', format="png")
 
     plt.close()
-    
-    """
