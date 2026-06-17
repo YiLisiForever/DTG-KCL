@@ -1,6 +1,7 @@
 from __future__ import print_function
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 class WeightSupCLoss(nn.Module):
     def __init__(self, temperature=0.07, contrast_mode='all',
                  base_temperature=0.07):
@@ -56,6 +57,9 @@ class WeightSupCLoss(nn.Module):
             anchor_count = contrast_count
         else:
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
+
+        contrast_feature = F.normalize(contrast_feature, dim=-1)
+        anchor_feature = F.normalize(anchor_feature, dim=-1)
 
         # 计算相似度 logits
         anchor_dot_contrast = torch.matmul(anchor_feature, contrast_feature.T)
