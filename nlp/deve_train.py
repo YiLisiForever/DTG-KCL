@@ -15,8 +15,8 @@ from data.deve_formatter import init
 from data.deal_fact import init_thulac
 
 # 换data_train数据集同时也要换law和crit文件,还有预训练的tfidf模型
-torch.manual_seed(42)
-torch.cuda.manual_seed_all(42)
+torch.manual_seed(43)
+torch.cuda.manual_seed_all(43)
 config = ConfigParser()
 init(config)
 init_thulac(config)
